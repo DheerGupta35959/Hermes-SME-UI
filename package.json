@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.1",
+    "convex": "^1.42.1",
     "marked": "^18.0.6",
     "nodemailer": "^9.0.3",
     "react": "^19.2.7",

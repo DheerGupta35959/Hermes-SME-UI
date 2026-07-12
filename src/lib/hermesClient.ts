@@ -233,11 +233,12 @@ export interface ChannelStatus {
   elevenlabs: boolean;
   linkup: boolean;
   shopify: boolean;
+  convex: boolean;
   model: boolean;
 }
 
 export async function channels(): Promise<ChannelStatus> {
-  if (!isLive) return { telegram: false, gmail: false, elevenlabs: false, linkup: false, shopify: false, model: false };
+  if (!isLive) return { telegram: false, gmail: false, elevenlabs: false, linkup: false, shopify: false, convex: false, model: false };
   return http<ChannelStatus>("/api/channels");
 }
 

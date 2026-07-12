@@ -21,6 +21,7 @@ brain/customers/
 brain/traces/
 server/.env
 server/catalog.csv
+convex/_generated
 server/alera.db
 server/alera.db-*
 server/eval/results/

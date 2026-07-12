@@ -185,7 +185,7 @@ export function Observability() {
 
       {ch && (
         <div className="obs-chstatus mono">
-          model {ch.model ? "✓" : "✗"} · telegram {ch.telegram ? "LIVE" : "staged"} · gmail {ch.gmail ? "LIVE" : "staged"} · shopify {ch.shopify ? "LIVE" : "staged"} · voice {ch.elevenlabs ? "LIVE" : "staged"} · linkup {ch.linkup ? "LIVE" : "staged"}
+          model {ch.model ? "✓" : "✗"} · telegram {ch.telegram ? "LIVE" : "staged"} · gmail {ch.gmail ? "LIVE" : "staged"} · shopify {ch.shopify ? "LIVE" : "staged"} · voice {ch.elevenlabs ? "LIVE" : "staged"} · linkup {ch.linkup ? "LIVE" : "staged"} · store {ch.convex ? "Convex" : "SQLite"}
         </div>
       )}
       {spikes > 0 && <div className="obs-alert">⚠ {spikes} run{spikes > 1 ? "s" : ""} flagged: cost &gt; 3× median. Investigate before it drains budget.</div>}

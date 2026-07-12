@@ -32,11 +32,12 @@ function timeAgo(iso?: string | null): string {
 
 // which worker owns a given stream item (for the live feed)
 function workerFor(item: StreamItem): string {
-  if (item.verdict.status === "rejected") return "rule keeper";
-  if (item.sources.includes("feedback")) return "product insights";
-  if (item.sources.includes("review")) return "reviews & reputation";
-  if (item.sources.includes("billing")) return "payments & invoicing";
-  if (item.sources.includes("calendar")) return "orders & fulfillment";
+  const sources = item.sources ?? [];
+  if (item.verdict?.status === "rejected") return "rule keeper";
+  if (sources.includes("feedback")) return "product insights";
+  if (sources.includes("review")) return "reviews & reputation";
+  if (sources.includes("billing")) return "payments & invoicing";
+  if (sources.includes("calendar")) return "orders & fulfillment";
   if (item.origin === "proactive") return "follow-ups";
   return "inbox responder";
 }
@@ -259,7 +260,7 @@ export function Home({
         {(it.customer || it.channel) && (
           <div className="exec-who">{it.customer ?? "customer"}{it.channel ? ` · ${it.channel}` : ""}</div>
         )}
-        {it.verdict.missionLine && <div className="exec-meta">rule · {it.verdict.missionLine}</div>}
+        {it.verdict?.missionLine && <div className="exec-meta">rule · {it.verdict.missionLine}</div>}
         {it.stage === "awaiting" && (
           <div className="exec-actions">
             <button className="btn-primary" onClick={() => approve(it)}>

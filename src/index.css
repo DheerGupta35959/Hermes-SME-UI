@@ -756,10 +756,12 @@ button {
   font-size: 12px;
 }
 .comp-dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--ok);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 22%, transparent);
 }
 .comp-chip.muted-chip {
   color: var(--muted);

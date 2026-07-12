@@ -1,0 +1,13 @@
+# Cloudflare Pages config for the Alera landing + waitlist.
+# Deploy:  cd alera/landing && wrangler pages deploy .
+name = "alera"
+pages_build_output_dir = "."
+compatibility_date = "2026-07-12"
+
+# Waitlist database. Create it once, then paste the id below:
+#   wrangler d1 create alera-waitlist
+#   wrangler d1 execute alera-waitlist --remote --file schema.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "alera-waitlist"
+database_id = "990983de-e695-49c7-b0c0-2ed84a766fa3"

@@ -33,6 +33,7 @@ import { shopifyEnabled } from "./shopify.mjs";
 import { catalogEnabled, catalogSize, catalogStats } from "./catalog.mjs";
 import { chat } from "./lib/agent.mjs";
 import { initDb, saveItem, loadItems } from "./lib/db.mjs";
+import { convexEnabled, cxUpsert, cxList } from "./lib/convexStore.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const BRAIN = join(__dir, "..", "brain");
@@ -49,9 +50,24 @@ initDb(join(__dir, "alera.db"));
 // Hydrated from SQLite on boot so the session survives restarts.
 const streamItems = [];
 const drafts = new Map(); // runId → { channel, to, draft, subject }
-for (const { item, draft } of loadItems()) {
-	streamItems.push(item);
-	if (draft) drafts.set(item.id, draft);
+function hydrateFrom(rows) {
+	streamItems.length = 0;
+	drafts.clear();
+	for (const { item, draft } of rows) {
+		streamItems.push(item);
+		if (draft) drafts.set(item.id, draft);
+	}
+}
+hydrateFrom(loadItems()); // instant local hydrate
+if (convexEnabled()) {
+	// Convex is the source of truth when configured — replace once it loads.
+	cxList().then((rows) => rows.length && hydrateFrom(rows)).catch(() => {});
+}
+
+// Persist an agent run to both stores: SQLite (local) + Convex (state of record).
+function persistItem(item, draft) {
+	saveItem(item, draft);
+	void cxUpsert(item, draft).catch(() => {});
 }
 
 function channelToSource(ch) {
@@ -88,7 +104,7 @@ function ingestResult(r, { to, channel }) {
 	};
 	streamItems.unshift(item);
 	if (streamItems.length > 60) streamItems.pop();
-	saveItem(item, drafts.get(r.runId));
+	persistItem(item, drafts.get(r.runId));
 	return item;
 }
 
@@ -346,6 +362,7 @@ const server = createServer(async (req, res) => {
 				...channelStatus(),
 				linkup: linkupEnabled(),
 				shopify: shopifyEnabled() || catalogEnabled(),
+				convex: convexEnabled(),
 				model: true,
 			});
 		}
@@ -371,7 +388,11 @@ const server = createServer(async (req, res) => {
 				`Resolve follow-ups ("do it", "break it down", "yes") against your own previous message. Be concise and specific. ` +
 				`For product counts, categories, prices, or customer contacts, use ONLY the data in the context — never invent products, customers, or figures. ` +
 				`If something truly isn't in the conversation or the context, say what's missing.\n\n=== LIVE BUSINESS CONTEXT ===\n${businessContext()}`;
-			const text = await chat({ system, user: question, history: Array.isArray(history) ? history.slice(-10) : [] });
+			const text = await chat({
+				system,
+				user: question,
+				history: Array.isArray(history) ? history.slice(-10) : [],
+			});
 			pushLog("alera", "answered");
 			return send(res, 200, { text, sources: [], confidence: "high" });
 		}
@@ -463,7 +484,7 @@ const server = createServer(async (req, res) => {
 					`${itemId}${verdict ? ` (${verdict.status})` : ""}`,
 				);
 			}
-			if (it) saveItem(it, d); // persist the new stage
+			if (it) persistItem(it, d); // persist the new stage
 			return send(res, 202, { ok: true });
 		}
 		if (req.method === "POST" && pathname === "/api/worker/run") {
