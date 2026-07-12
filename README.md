@@ -1,5 +1,8 @@
 # Hermes SME
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](./LICENSE)
+&nbsp;Open source · built on [Nous Research Hermes](https://github.com/NousResearch)
+
 **A control panel that turns a [Hermes](https://github.com/NousResearch) agent into a self-directed assistant for a small business — no terminal, no config, no "agent" jargon.**
 
 The owner opens one screen and sees their **rules**, a **live feed** of what the assistant did (or wants approval for, or declined — always with the reason), an **ask box**, and their **documents**. Under the hood it's a real, locally-running Hermes agent. The assistant is named **Alera**.
@@ -109,3 +112,11 @@ React 19 · TypeScript · Vite · Node (adapter) · [Nous Research Hermes](https
 ## Privacy
 
 Runtime agent output (customer messages, phone numbers, conversation traces) lives in `brain/customers/` and `brain/traces/` and is **git-ignored** — it never leaves your machine.
+
+## Contributing
+
+Hermes SME is **open source** and contributions are welcome — issues, ideas, and pull requests. If you're building on the Hermes ecosystem, feel free to fork and adapt.
+
+## License
+
+[MIT](./LICENSE) © 2026 — free to use, modify, and distribute.
