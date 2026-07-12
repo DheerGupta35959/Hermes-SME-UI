@@ -15,6 +15,21 @@ const STAGE_LABEL: Record<string, string> = {
   declined: "declined by rules",
 };
 
+// Human-readable relative time ("just now", "5 min ago", then an absolute date).
+function timeAgo(iso?: string | null): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return "";
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 45) return "just now";
+  if (s < 90) return "1 min ago";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 // which worker owns a given stream item (for the live feed)
 function workerFor(item: StreamItem): string {
   if (item.verdict.status === "rejected") return "rule keeper";
@@ -67,6 +82,54 @@ export function Home({
   const [query, setQuery] = useState("");
   const [thinking, setThinking] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  // chat message controls: one play/pause audio at a time + copy feedback
+  const [audioIdx, setAudioIdx] = useState<number | null>(null);
+  const [audioState, setAudioState] = useState<"idle" | "loading" | "playing" | "paused">("idle");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlCacheRef = useRef<Map<number, string>>(new Map());
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  async function toggleAudio(i: number, text: string) {
+    const cur = audioRef.current;
+    if (audioIdx === i && cur) {
+      if (audioState === "playing") {
+        cur.pause();
+        setAudioState("paused");
+      } else {
+        await cur.play().catch(() => {});
+        setAudioState("playing");
+      }
+      return;
+    }
+    if (cur) cur.pause();
+    setAudioIdx(i);
+    setAudioState("loading");
+    try {
+      let url = urlCacheRef.current.get(i);
+      if (!url) {
+        url = await Hermes.ttsUrl(text);
+        urlCacheRef.current.set(i, url);
+      }
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => setAudioState("idle");
+      await audio.play();
+      setAudioState("playing");
+    } catch {
+      setAudioState("idle");
+      setAudioIdx(null);
+    }
+  }
+
+  async function copyMsg(i: number, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIdx(i);
+      setTimeout(() => setCopiedIdx((v) => (v === i ? null : v)), 1500);
+    } catch {
+      /* clipboard blocked */
+    }
+  }
   const [editingCompany, setEditingCompany] = useState(false);
   const [companyName, setCompanyName] = useState("");
   const [companyAbout, setCompanyAbout] = useState("");
@@ -161,7 +224,6 @@ export function Home({
     };
   }, []);
 
-  const needsYou = items.filter((i) => i.stage === "awaiting").length;
   const connectedIds = new Set(connectors.filter((c) => c.state === "connected").map((c) => c.id));
   const isConfigured = (s: Skill) => s.requires.every((r) => connectedIds.has(r));
   // Connections shown to the owner = the four we really wired, with live status.
@@ -177,16 +239,52 @@ export function Home({
   const workerOf = (it: StreamItem) => it.specialist || workerFor(it);
   // live feed = every stream item, newest/most-urgent first, tagged with its worker
   const feed = items.map((it) => ({ item: it, worker: workerOf(it) }));
+  const pendingFeed = feed.filter((f) => f.item.stage === "awaiting");
+  const activityFeed = feed.filter((f) => f.item.stage !== "awaiting");
+
+  const renderExecRow = ({ item: it, worker }: { item: StreamItem; worker: string }) => (
+    <div key={it.id} className={`exec-row ${it.stage}`}>
+      <span className="exec-ico" style={{ background: workerColor[worker] ?? "#333" }}>
+        {worker.slice(0, 1).toUpperCase()}
+      </span>
+      <div className="exec-body">
+        <div className="exec-top">
+          <button className="exec-worker" onClick={() => onOpenWorker(worker)}>
+            {worker}
+          </button>
+          <span className={`exec-stage ${it.stage}`}>{STAGE_LABEL[it.stage]}</span>
+          {it.at && <span className="exec-time" title={new Date(it.at).toLocaleString()}>{timeAgo(it.at)}</span>}
+        </div>
+        <div className="exec-title">{it.title}</div>
+        {(it.customer || it.channel) && (
+          <div className="exec-who">{it.customer ?? "customer"}{it.channel ? ` · ${it.channel}` : ""}</div>
+        )}
+        {it.verdict.missionLine && <div className="exec-meta">rule · {it.verdict.missionLine}</div>}
+        {it.stage === "awaiting" && (
+          <div className="exec-actions">
+            <button className="btn-primary" onClick={() => approve(it)}>
+              Approve & send
+            </button>
+            <button className="btn-ghost" onClick={() => override(it)}>
+              Decline
+            </button>
+          </div>
+        )}
+        {it.outcome && it.stage !== "awaiting" && <div className="exec-outcome">{it.outcome}</div>}
+      </div>
+    </div>
+  );
 
   async function runAsk(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim() || thinking) return;
     const q = query.trim();
     setQuery("");
+    const history = messages.map((m) => ({ role: m.role, text: m.text }));
     setMessages((prev) => [...prev, { role: "user", text: q }]);
     setThinking(true);
     try {
-      const a = await Hermes.ask(q);
+      const a = await Hermes.ask(q, history);
       setMessages((prev) => [...prev, { role: "ai", text: a.text, meta: a }]);
     } catch {
       setMessages((prev) => [...prev, { role: "ai", text: "hmm, i couldn't reach the agent just now — try again." }]);
@@ -378,50 +476,21 @@ export function Home({
           </button>
         </div>
         <div className="col-body feed-body">
-          {needsYou > 0 && (
-            <div className="featured-agent">
-              <div className="featured-ico">✓</div>
-              <div>
-                <b>
-                  {needsYou} item{needsYou > 1 ? "s" : ""} need your approval
-                </b>
-                <em>Money messages and rule exceptions wait for you</em>
+          {pendingFeed.length > 0 && (
+            <>
+              <div className="feed-section-label pinned">
+                📌 Needs your approval · {pendingFeed.length}
               </div>
-            </div>
+              {pendingFeed.map(renderExecRow)}
+              <div className="feed-divider">All activity</div>
+            </>
           )}
 
-          {feed.map(({ item: it, worker }) => (
-            <div key={it.id} className={`exec-row ${it.stage}`}>
-              <span className="exec-ico" style={{ background: workerColor[worker] ?? "#333" }}>
-                {worker.slice(0, 1).toUpperCase()}
-              </span>
-              <div className="exec-body">
-                <div className="exec-top">
-                  <button className="exec-worker" onClick={() => onOpenWorker(worker)}>
-                    {worker}
-                  </button>
-                  <span className={`exec-stage ${it.stage}`}>{STAGE_LABEL[it.stage]}</span>
-                </div>
-                <div className="exec-title">{it.title}</div>
-                {it.verdict.missionLine && (
-                  <div className="exec-meta">rule · {it.verdict.missionLine}</div>
-                )}
-                {it.stage === "awaiting" && (
-                  <div className="exec-actions">
-                    <button className="btn-primary" onClick={() => approve(it)}>
-                      Approve & send
-                    </button>
-                    <button className="btn-ghost" onClick={() => override(it)}>
-                      Decline
-                    </button>
-                  </div>
-                )}
-                {it.outcome && it.stage !== "awaiting" && (
-                  <div className="exec-outcome">{it.outcome}</div>
-                )}
-              </div>
-            </div>
-          ))}
+          {activityFeed.length > 0 ? (
+            activityFeed.map(renderExecRow)
+          ) : pendingFeed.length === 0 ? (
+            <div className="feed-empty">No activity yet — text the bot or send a message.</div>
+          ) : null}
         </div>
       </section>
 
@@ -438,13 +507,22 @@ export function Home({
                     className="md"
                     dangerouslySetInnerHTML={{ __html: marked.parse(msg.text, { breaks: true }) as string }}
                   />
-                  <button
-                    className="listen-btn"
-                    title="Listen (ElevenLabs)"
-                    onClick={() => void Hermes.speak(msg.text).catch(() => {})}
-                  >
-                    🔊 Listen
-                  </button>
+                  <div className="bubble-actions">
+                    <button
+                      className="msg-btn"
+                      title={audioIdx === i && audioState === "playing" ? "Pause" : "Play"}
+                      onClick={() => void toggleAudio(i, msg.text)}
+                    >
+                      {audioIdx === i && audioState === "loading"
+                        ? "⏳"
+                        : audioIdx === i && audioState === "playing"
+                          ? "⏸"
+                          : "▶"}
+                    </button>
+                    <button className="msg-btn" title="Copy message" onClick={() => void copyMsg(i, msg.text)}>
+                      {copiedIdx === i ? "✓" : "⧉"}
+                    </button>
+                  </div>
                 </>
               ) : (
                 <div>{msg.text}</div>

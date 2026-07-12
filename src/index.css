@@ -2222,3 +2222,17 @@ button {
 .conn-soon-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
 .conn-btn:disabled { opacity: .7; cursor: default; }
 .comp-dot.off { background: var(--muted); opacity: .45; }
+
+/* Live Feed: pinned approvals, divider, timestamps, who */
+.feed-section-label { font-size: 11px; font-weight: 600; color: var(--amber); text-transform: uppercase; letter-spacing: .04em; padding: 4px 2px 6px; }
+.feed-divider { display: flex; align-items: center; gap: 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 6px; }
+.feed-divider::before, .feed-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.feed-empty { color: var(--muted); font-size: 13px; padding: 20px 8px; text-align: center; }
+.exec-time { margin-left: auto; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.exec-who { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.exec-row.awaiting { border-color: var(--amber); background: color-mix(in srgb, var(--amber) 7%, transparent); }
+
+/* chat message controls: play/pause + copy */
+.bubble-actions { display: flex; gap: 6px; margin-top: 6px; }
+.msg-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); cursor: pointer; transition: color .12s, border-color .12s; }
+.msg-btn:hover { color: var(--ink); border-color: var(--accent); }

@@ -44,9 +44,13 @@ function costOf(model, promptTokens, completionTokens) {
   return (promptTokens / 1e6) * p.in + (completionTokens / 1e6) * p.out;
 }
 
-async function callModel({ system, user, json }) {
+async function callModel({ system, user, json, history = [] }) {
   const body = { model: MODEL, messages: [] };
   if (system) body.messages.push({ role: "system", content: system });
+  for (const m of history) {
+    const content = m.content ?? m.text;
+    if (content) body.messages.push({ role: m.role === "ai" || m.role === "assistant" ? "assistant" : "user", content });
+  }
   body.messages.push({ role: "user", content: user });
   if (json) body.response_format = { type: "json_object" };
 
@@ -62,6 +66,18 @@ async function callModel({ system, user, json }) {
     promptTokens: data.usage?.prompt_tokens ?? 0,
     completionTokens: data.usage?.completion_tokens ?? 0,
   };
+}
+
+// Multi-turn completion for the owner chat (no trace). Carries prior turns so
+// follow-ups like "do it" / "break it down" resolve against the conversation.
+export async function chat({ system, user, history = [] }) {
+  if (!API_KEY) return "I can't reach the model right now (no OPENAI_API_KEY).";
+  try {
+    const { text } = await callModel({ system, user, history });
+    return text;
+  } catch (err) {
+    return `Sorry — I hit an error: ${String(err.message || err)}`;
+  }
 }
 
 // Run one agent hop and record it in the trace. Returns { text, json?, step }.

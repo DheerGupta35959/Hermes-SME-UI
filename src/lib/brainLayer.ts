@@ -48,6 +48,9 @@ export interface StreamItem {
   evidence?: Evidence;
   specialist?: string; // the real worker the manager routed to (live runs)
   totals?: { tokens: number; costUsd: number; ms: number };
+  customer?: string | null; // who sent it (phone/email)
+  channel?: string | null;
+  at?: string; // ISO timestamp of the run
 }
 
 export interface Answer {

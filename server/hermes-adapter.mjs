@@ -30,7 +30,8 @@ import { channelStatus, deliver, tgPoll, tgSend } from "./channels.mjs";
 import { speak, voiceEnabled } from "./voice.mjs";
 import { linkupEnabled } from "./linkup.mjs";
 import { shopifyEnabled } from "./shopify.mjs";
-import { catalogEnabled, catalogSize } from "./catalog.mjs";
+import { catalogEnabled, catalogSize, catalogStats } from "./catalog.mjs";
+import { chat } from "./lib/agent.mjs";
 import { initDb, saveItem, loadItems } from "./lib/db.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -81,11 +82,55 @@ function ingestResult(r, { to, channel }) {
 		},
 		specialist: r.specialist,
 		totals: r.totals,
+		customer: to ?? null,
+		channel: channel ?? null,
+		at: new Date().toISOString(),
 	};
 	streamItems.unshift(item);
 	if (streamItems.length > 60) streamItems.pop();
 	saveItem(item, drafts.get(r.runId));
 	return item;
+}
+
+// Live business context for the owner chat — real catalog stats + who has
+// pinged + what happened. Lets "Talk to Alera" answer analytics questions
+// ("how many products?", "who messaged us?") grounded in real data.
+function businessContext() {
+	const fmt = (o) =>
+		Object.entries(o)
+			.map(([k, v]) => `${k}: ${v}`)
+			.join(", ");
+	const customers = [
+		...new Set(streamItems.map((i) => i.customer).filter(Boolean)),
+	];
+	const activity = streamItems
+		.slice(0, 25)
+		.map(
+			(i) =>
+				`- ${i.customer || "?"} via ${i.channel || "?"}: "${i.title}" → ${i.stage}${i.verdict?.missionLine ? ` [${i.verdict.missionLine}]` : ""}`,
+		)
+		.join("\n");
+	const parts = [];
+	if (business?.name)
+		parts.push(
+			`BUSINESS: ${business.name}${business.about ? ` — ${business.about}` : ""}`,
+		);
+	if (catalogEnabled()) {
+		const s = catalogStats();
+		parts.push(
+			`PRODUCT CATALOG: ${s.count} products. By audience: {${fmt(s.byAudience)}}. By type: {${fmt(s.byType)}}. Top brands: {${fmt(
+				Object.fromEntries(
+					Object.entries(s.byVendor)
+						.sort((a, b) => b[1] - a[1])
+						.slice(0, 6),
+				),
+			)}}. Price range ₹${s.min}–₹${s.max}.`,
+		);
+	}
+	parts.push(
+		`CUSTOMER ACTIVITY (this session): ${streamItems.length} messages from ${customers.length} people.\nContacts: ${customers.join(", ") || "none yet"}\nRecent:\n${activity || "none yet"}`,
+	);
+	return parts.join("\n\n");
 }
 
 // locate the real hermes binary + its project dir
@@ -318,15 +363,17 @@ const server = createServer(async (req, res) => {
 
 		// WRITE — the real agent (in Alera persona)
 		if (req.method === "POST" && pathname === "/api/ask") {
-			const { question } = await readBody(req);
+			const { question, history = [] } = await readBody(req);
 			pushLog("you", question);
-			const r = await askAlera(question);
-			pushLog("alera", r.ok ? "answered" : "error");
-			return send(res, 200, {
-				text: r.text,
-				sources: [],
-				confidence: r.ok ? "high" : "low",
-			});
+			const system =
+				`You are Alera, the AI operations assistant for ${business?.name || "this business"}, in an ongoing chat with the owner. ` +
+				`Use BOTH the conversation so far and the live business context below to answer. ` +
+				`Resolve follow-ups ("do it", "break it down", "yes") against your own previous message. Be concise and specific. ` +
+				`For product counts, categories, prices, or customer contacts, use ONLY the data in the context — never invent products, customers, or figures. ` +
+				`If something truly isn't in the conversation or the context, say what's missing.\n\n=== LIVE BUSINESS CONTEXT ===\n${businessContext()}`;
+			const text = await chat({ system, user: question, history: Array.isArray(history) ? history.slice(-10) : [] });
+			pushLog("alera", "answered");
+			return send(res, 200, { text, sources: [], confidence: "high" });
 		}
 		if (req.method === "POST" && pathname === "/api/command") {
 			const { text } = await readBody(req);

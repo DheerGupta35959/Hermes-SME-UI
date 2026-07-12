@@ -110,8 +110,9 @@ export async function command(text: string): Promise<TerminalLine[]> {
 }
 
 // Chat → grounded answer from Hermes (falls back to local retrieval in mock).
-export async function ask(question: string): Promise<Answer> {
-  if (isLive) return http<Answer>("/api/ask", { method: "POST", body: JSON.stringify({ question }) });
+// `history` carries prior turns so follow-ups resolve in context.
+export async function ask(question: string, history: { role: "user" | "ai"; text: string }[] = []): Promise<Answer> {
+  if (isLive) return http<Answer>("/api/ask", { method: "POST", body: JSON.stringify({ question, history }) });
   return Brain.ask(question);
 }
 
@@ -246,18 +247,17 @@ export async function sendInbound(text: string, customer: string, channel = "tel
   return http<{ runId: string }>("/api/inbound", { method: "POST", body: JSON.stringify({ text, customer, channel }) });
 }
 
-// ElevenLabs: fetch the spoken reply as audio and play it.
-export async function speak(text: string): Promise<void> {
-  if (!isLive) return;
+// ElevenLabs: fetch the spoken reply as audio and return a playable object URL
+// (the caller controls play/pause). Throws if the voice service isn't available.
+export async function ttsUrl(text: string): Promise<string> {
+  if (!isLive) throw new Error("voice unavailable");
   const res = await fetch(`${BASE}/api/voice`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}) },
     body: JSON.stringify({ text }),
   });
   if (!res.ok) throw new Error(`voice ${res.status}`);
-  const blob = await res.blob();
-  const audio = new Audio(URL.createObjectURL(blob));
-  await audio.play();
+  return URL.createObjectURL(await res.blob());
 }
 
 export interface BusinessProfile {

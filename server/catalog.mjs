@@ -66,6 +66,24 @@ function load() {
 export const catalogEnabled = () => load().length > 0;
 export const catalogSize = () => load().length;
 
+// Aggregate stats for the owner-facing chat ("how many products, categorise them").
+export function catalogStats() {
+  const p = load();
+  const byAudience = {}, byType = {}, byVendor = {};
+  let min = Infinity, max = 0;
+  const bump = (o, k) => { if (k) o[k] = (o[k] || 0) + 1; };
+  for (const x of p) {
+    const tags = x.tags.toLowerCase();
+    const aud = /women/.test(tags) ? "Women" : /\bmen\b/.test(tags) ? "Men" : /girls/.test(tags) ? "Girls" : /boys/.test(tags) ? "Boys" : /unisex/.test(tags) ? "Unisex" : "Other";
+    bump(byAudience, aud);
+    bump(byType, x.type || "Other");
+    bump(byVendor, x.vendor || "Other");
+    const pr = parseFloat(x.price);
+    if (!isNaN(pr)) { min = Math.min(min, pr); max = Math.max(max, pr); }
+  }
+  return { count: p.length, byAudience, byType, byVendor, min: isFinite(min) ? min : 0, max };
+}
+
 // Keyword search over title/tags/type/vendor/desc. Returns a compact summary.
 export function searchCatalog(query, limit = 6) {
   const products = load();
