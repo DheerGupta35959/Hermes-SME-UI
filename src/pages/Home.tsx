@@ -5,6 +5,7 @@ import * as Hermes from "../lib/hermesClient";
 import type { BrainDoc } from "../lib/brainDocs";
 import { skills, connectors, workerColor, type Skill } from "../brain";
 import type { StreamItem, Verdict, Answer } from "../lib/brainLayer";
+import type { ResearchConfig, ResearchReport } from "../lib/hermesClient";
 
 const STAGE_LABEL: Record<string, string> = {
   inbox: "new",
@@ -131,6 +132,73 @@ export function Home({
       /* clipboard blocked */
     }
   }
+  // ── Research state ──────────────────────────────────────────────────────────
+  const [researchOpen, setResearchOpen] = useState(false);
+  const [researchConfig, setResearchConfig] = useState<ResearchConfig | null>(null);
+  const [researchReports, setResearchReports] = useState<ResearchReport[]>([]);
+  const [researchRunning, setResearchRunning] = useState(false);
+  const [researchConfigOpen, setResearchConfigOpen] = useState(false);
+  const [draftTopics, setDraftTopics] = useState<string[]>(["Competitor pricing & products", "Industry trends & news"]);
+  const [draftTime, setDraftTime] = useState("08:00");
+  const [draftEnabled, setDraftEnabled] = useState(true);
+
+  // Load research config + reports
+  useEffect(() => {
+    let alive = true;
+    Hermes.getResearchConfig().then((c) => {
+      if (!alive) return;
+      setResearchConfig(c);
+      setDraftTopics(c.topics);
+      setDraftTime(c.time);
+      setDraftEnabled(c.enabled);
+    }).catch(() => {});
+    Hermes.listResearchReports().then((r) => {
+      if (alive) setResearchReports(r);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  async function handleRunResearch() {
+    setResearchRunning(true);
+    try {
+      const result = await Hermes.runResearchNow();
+      if (result.success) {
+        // Refresh config + reports
+        const [c, r] = await Promise.all([
+          Hermes.getResearchConfig().catch(() => null),
+          Hermes.listResearchReports().catch(() => []),
+        ]);
+        if (c) setResearchConfig(c);
+        setResearchReports(r);
+      }
+    } catch { /* ignore */ }
+    setResearchRunning(false);
+  }
+
+  async function handleSaveResearchConfig() {
+    if (!researchConfig) return;
+    const updated: ResearchConfig = {
+      ...researchConfig,
+      enabled: draftEnabled,
+      time: draftTime,
+      topics: draftTopics.filter((t) => t.trim()),
+    };
+    try {
+      const saved = await Hermes.saveResearchConfig(updated);
+      setResearchConfig(saved);
+      setResearchConfigOpen(false);
+    } catch { /* ignore */ }
+  }
+
+  function openResearchConfig() {
+    if (researchConfig) {
+      setDraftTopics(researchConfig.topics);
+      setDraftTime(researchConfig.time);
+      setDraftEnabled(researchConfig.enabled);
+    }
+    setResearchConfigOpen(true);
+  }
+
   const [editingCompany, setEditingCompany] = useState(false);
   const [companyName, setCompanyName] = useState("");
   const [companyAbout, setCompanyAbout] = useState("");
@@ -321,7 +389,153 @@ export function Home({
     void Hermes.override(item.id, flipped);
   }
 
+  const latestReport = researchReports[0];
+  const researchOn = researchConfig?.enabled ?? false;
+  const lastRunLabel = researchConfig?.lastRun
+    ? timeAgo(researchConfig.lastRun)
+    : "never";
+
   return (
+    <>
+      {/* Research bar — collapsible quick-access section */}
+      <div className={`research-bar ${researchOpen ? "open" : ""}`}>
+        <button
+          className="research-toggle"
+          onClick={() => setResearchOpen((v) => !v)}
+          aria-expanded={researchOpen}
+        >
+          <span className="research-icon">◉</span>
+          <span className="research-label">Daily Research</span>
+          <span className={`research-dot ${researchOn ? "on" : "off"}`} />
+          <span className="research-meta">
+            {researchOn ? `Last run: ${lastRunLabel}` : "Paused"}
+          </span>
+          <span className="chev">{researchOpen ? "▾" : "▸"}</span>
+        </button>
+
+        {researchOpen && (
+          <div className="research-body">
+            <div className="research-actions">
+              <button
+                className="btn-primary btn-sm"
+                onClick={handleRunResearch}
+                disabled={researchRunning}
+              >
+                {researchRunning ? "⏳ Running…" : "▶ Run now"}
+              </button>
+              <button className="btn-ghost btn-sm" onClick={openResearchConfig}>
+                ⚙ Configure
+              </button>
+            </div>
+
+            <div className="research-topics">
+              <span className="research-topics-label">Topics:</span>
+              {(researchConfig?.topics || []).map((t, i) => (
+                <span key={i} className="research-topic-tag">{t}</span>
+              ))}
+            </div>
+
+            {latestReport && (
+              <details className="research-latest">
+                <summary className="research-latest-summary">
+                  📄 Latest: {latestReport.title}
+                </summary>
+                <div className="research-latest-body md">
+                  <pre className="research-report-text">{latestReport.body}</pre>
+                </div>
+              </details>
+            )}
+
+            {researchReports.length > 1 && (
+              <div className="research-history">
+                <span className="research-history-label">Past reports:</span>
+                <div className="research-history-list">
+                  {researchReports.slice(1, 6).map((r) => (
+                    <details key={r.date} className="research-history-item">
+                      <summary>{r.title}</summary>
+                      <pre className="research-report-text">{r.body}</pre>
+                    </details>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Research config modal */}
+      {researchConfigOpen && (
+        <div className="modal-overlay" onClick={() => setResearchConfigOpen(false)}>
+          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Research settings">
+            <div className="modal-head">
+              <h2>Research settings</h2>
+              <button className="icon-btn" onClick={() => setResearchConfigOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div className="modal-body">
+              <label className="field row">
+                <span>Auto-research</span>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={draftEnabled}
+                    onChange={(e) => setDraftEnabled(e.target.checked)}
+                  />
+                  <span className="toggle-slider" />
+                </label>
+              </label>
+              <label className="field">
+                <span>Daily time</span>
+                <input
+                  type="time"
+                  value={draftTime}
+                  onChange={(e) => setDraftTime(e.target.value)}
+                />
+              </label>
+              <div className="field">
+                <span>Research topics</span>
+                <div className="topic-list">
+                  {draftTopics.map((topic, i) => (
+                    <div key={i} className="topic-row">
+                      <input
+                        value={topic}
+                        onChange={(e) => {
+                          const next = [...draftTopics];
+                          next[i] = e.target.value;
+                          setDraftTopics(next);
+                        }}
+                        placeholder="e.g. Competitor pricing"
+                      />
+                      <button
+                        className="icon-btn topic-remove"
+                        onClick={() => setDraftTopics(draftTopics.filter((_, j) => j !== i))}
+                        disabled={draftTopics.length <= 1}
+                        aria-label="Remove topic"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="btn-ghost btn-sm"
+                  onClick={() => setDraftTopics([...draftTopics, ""])}
+                >
+                  + Add topic
+                </button>
+              </div>
+              <p className="field-hint">
+                The AI automatically generates focused search queries for each topic.
+                Results appear in your Live Feed, plus are emailed and sent via Telegram when configured.
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button className="btn-ghost" onClick={() => setResearchConfigOpen(false)}>Cancel</button>
+              <button className="btn-primary" onClick={handleSaveResearchConfig}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     <div className={`grid4 ${companyOpen ? "" : "company-collapsed"}`}>
       <section className={`col company-col ${companyOpen ? "" : "collapsed"}`}>
         {companyOpen ? (
@@ -602,5 +816,6 @@ export function Home({
         </div>
       )}
     </div>
+    </>
   );
 }

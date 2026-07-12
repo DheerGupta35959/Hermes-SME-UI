@@ -245,6 +245,52 @@ export async function channels(): Promise<ChannelStatus> {
   return http<ChannelStatus>("/api/channels");
 }
 
+// ── Research ────────────────────────────────────────────────────────────────────
+
+export interface ResearchConfig {
+  enabled: boolean;
+  time: string; // "HH:MM"
+  topics: string[];
+  lastRun: string | null;
+  lastReportDate: string | null;
+}
+
+export interface ResearchReport {
+  date: string;
+  title: string;
+  summary: string;
+  body: string;
+}
+
+export interface ResearchResult {
+  success: boolean;
+  report?: string;
+  date?: string;
+  findings?: { topic: string; summary: string }[];
+  error?: string;
+  skipped?: boolean;
+}
+
+export async function getResearchConfig(): Promise<ResearchConfig> {
+  if (!isLive) return { enabled: false, time: "08:00", topics: ["Competitor pricing", "Industry trends"], lastRun: null, lastReportDate: null };
+  return http<ResearchConfig>("/api/research/config");
+}
+
+export async function saveResearchConfig(config: ResearchConfig): Promise<ResearchConfig> {
+  if (!isLive) return config;
+  return http<ResearchConfig>("/api/research/config", { method: "PUT", body: JSON.stringify(config) });
+}
+
+export async function listResearchReports(): Promise<ResearchReport[]> {
+  if (!isLive) return [];
+  return http<ResearchReport[]>("/api/research/history");
+}
+
+export async function runResearchNow(): Promise<ResearchResult> {
+  if (!isLive) return { success: false, error: "Research requires a live Hermes connection." };
+  return http<ResearchResult>("/api/research/run", { method: "POST" });
+}
+
 // Feed a new customer message to the crew → returns the projected stream item.
 export async function sendInbound(text: string, customer: string, channel = "telegram"): Promise<{ runId: string }> {
   if (!isLive) return { runId: "" };

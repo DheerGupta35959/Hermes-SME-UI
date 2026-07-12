@@ -358,6 +358,7 @@ export const workerColor: Record<string, string> = {
   "restock & inventory": "#0ea5e9",
   "daily brief": "#64748b",
   "product insights": "#10b981",
+  "daily researcher": "#06b6d4",
   "rule keeper": "#ef4444",
 };
 

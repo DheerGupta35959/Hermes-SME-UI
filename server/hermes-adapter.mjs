@@ -26,12 +26,13 @@ import { dirname, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { initTraceStore, listRuns, getRun, searchRuns } from "./lib/trace.mjs";
 import { initOrchestrator, handleInbound } from "./orchestrator.mjs";
-import { channelStatus, deliver, tgPoll, tgSend } from "./channels.mjs";
+import { channelStatus, deliver, tgPoll, tgSend, emailSend } from "./channels.mjs";
 import { speak, voiceEnabled } from "./voice.mjs";
 import { linkupEnabled } from "./linkup.mjs";
 import { shopifyEnabled } from "./shopify.mjs";
 import { catalogEnabled, catalogSize, catalogStats } from "./catalog.mjs";
 import { chat } from "./lib/agent.mjs";
+import { runResearch, loadConfig, saveConfig, listReports, DEFAULT_CONFIG } from "./research.mjs";
 import { initDb, saveItem, loadItems, findUserByUsername, findUserById, listAllUsers, createUser, updateUser, deleteUser, getUserRoles } from "./lib/db.mjs";
 import { verifyToken, isPublicPath, verifyPassword, signToken } from "./lib/auth.mjs";
 import { convexEnabled, cxUpsert, cxList } from "./lib/convexStore.mjs";
@@ -45,6 +46,104 @@ const TOKEN = process.env.ALERA_TOKEN || "";
 initTraceStore(BRAIN);
 initOrchestrator(BRAIN);
 initDb(join(__dir, "alera.db"));
+
+// ── Research scheduler ─────────────────────────────────────────────────────────
+// Checks every minute if it's time to run daily research.
+// When triggered, runs research and delivers results.
+const RESEARCH_CHECK_MS = 60_000;
+let researchTimer = null;
+let lastResearchDate = "";
+// Track the latest Telegram chat ID that messaged the bot (the owner/operator)
+let lastTelegramChatId = null;
+
+async function checkResearchSchedule() {
+  const config = await loadConfig().catch(() => null);
+  if (!config?.enabled) return;
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  // Only run once per day
+  if (config.lastReportDate === today) return;
+  // Check if the configured time has passed
+  const [hour, minute] = (config.time || "08:00").split(":").map(Number);
+  const runAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
+  if (now < runAt) return;
+
+  console.log(`[research] scheduled run triggered at ${now.toISOString()}`);
+  await runDailyResearch();
+}
+
+// Shared: runs research + creates stream item + delivers
+async function runDailyResearch() {
+  pushLog("research", "starting daily research…");
+  const result = await runResearch();
+  if (!result.success) {
+    pushLog("research", `research failed: ${result.error}`);
+    return result;
+  }
+
+  pushLog("research", `✓ research complete — ${result.findings?.length || 0} topics`);
+
+  // Create a stream item for the Live Feed
+  const runId = `research-${result.date}-${Date.now()}`;
+  const sources = result.sources?.slice(0, 5).map((s) => ({ source: "linkup", text: s.name })) || [];
+  const item = {
+    id: runId,
+    title: `Daily Research — ${result.date}`,
+    stage: "done",
+    origin: "proactive",
+    sources: ["feedback"],
+    verdict: { status: "approved", missionLine: "daily research", reasoning: "Auto-generated web research summary" },
+    outcome: `${result.findings?.length || 0} topics researched`,
+    evidence: {
+      signals: sources,
+      missionLine: "daily research",
+      missionStatus: "pass",
+      reasoning: `Daily research completed. Topics: ${(result.findings || []).map((f) => f.topic).join(", ")}`,
+      spec: result.report ? result.report.slice(0, 500) + "…" : "(report unavailable)",
+    },
+    specialist: "daily researcher",
+    totals: { tokens: 0, costUsd: 0, ms: 0 },
+    customer: null,
+    channel: "research",
+    at: new Date().toISOString(),
+  };
+  streamItems.unshift(item);
+  if (streamItems.length > 60) streamItems.pop();
+  persistItem(item, null);
+
+  // Deliver via the already-configured channels (no extra env vars needed)
+  const summary = result.report?.split("\n").slice(0, 25).join("\n") || "";
+  const subj = `Daily Research Brief — ${result.date}`;
+
+  // Email: send to the Gmail account that's already configured
+  if (result.report && process.env.RESEARCH_EMAIL) {
+    await emailSend(process.env.RESEARCH_EMAIL, subj, summary).catch(() => {});
+    pushLog("send", `research brief emailed`);
+  } else if (result.report && (process.env.RESEND_API_KEY || (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD))) {
+    // Fallback: send to the GMAIL_USER itself (the owner's email used for SMTP)
+    const to = process.env.GMAIL_USER;
+    if (to) {
+      await emailSend(to, subj, summary).catch(() => {});
+      pushLog("send", `research brief emailed to ${to}`);
+    }
+  }
+
+  // Telegram: send to the last chat ID that messaged the bot (your chat)
+  if (result.report && process.env.TELEGRAM_BOT_TOKEN && lastTelegramChatId) {
+    await tgSend(lastTelegramChatId, `📊 *Daily Research Brief — ${result.date}*\n\n${summary}`).catch(() => {});
+    pushLog("send", `research brief sent via Telegram`);
+  }
+
+  return result;
+}
+
+// Start the research scheduler
+async function startResearchScheduler() {
+  researchTimer = setInterval(checkResearchSchedule, RESEARCH_CHECK_MS);
+  // Also check immediately on boot (in case the time has passed today)
+  setTimeout(checkResearchSchedule, 10_000);
+  console.log(`[research] scheduler active — checking every ${RESEARCH_CHECK_MS / 1000}s`);
+}
 
 // live projection the cockpit reads: real agent runs become stream items, and
 // the drafted action for each is held so an approval can actually send it.
@@ -675,6 +774,30 @@ const server = createServer(async (req, res) => {
 			return send(res, 204);
 		}
 
+		// ── Research endpoints ──────────────────────────────────────────────────
+		if (req.method === "GET" && pathname === "/api/research/config") {
+			const config = await loadConfig();
+			return send(res, 200, config);
+		}
+
+		if (req.method === "PUT" && pathname === "/api/research/config") {
+			const body = await readBody(req);
+			const config = { ...DEFAULT_CONFIG, ...body };
+			await saveConfig(config);
+			return send(res, 200, config);
+		}
+
+		if (req.method === "GET" && pathname === "/api/research/history") {
+			const reports = await listReports();
+			return send(res, 200, reports);
+		}
+
+		if (req.method === "POST" && pathname === "/api/research/run") {
+			pushLog("research", "manual run triggered");
+			const result = await runDailyResearch();
+			return send(res, 200, result);
+		}
+
 		return send(res, 404, { error: "not found" });
 	} catch (err) {
 		return send(res, 500, { error: String(err) });
@@ -721,9 +844,17 @@ server.listen(PORT, async () => {
 		`  channels: telegram ${ch.telegram ? "LIVE" : "staged"} · gmail ${ch.gmail ? "LIVE" : "staged"} · voice ${voiceEnabled() ? "LIVE" : "staged"} · catalog ${catalogEnabled() ? `${catalogSize()} products` : "staged"}`,
 	);
 
+	// Start the daily research scheduler
+	startResearchScheduler().then(() => {
+		console.log(`  research scheduler: active — daily at ${process.env.RESEARCH_TIME || "08:00"}`);
+		if (!process.env.RESEARCH_EMAIL && !process.env.GMAIL_USER) console.log(`  research email:    staged (set GMAIL_USER or RESEARCH_EMAIL)`);
+	});
+
 	// Real live surface: a judge texts the bot → the crew runs → a real reply goes back.
 	if (ch.telegram) {
 		tgPoll(async ({ text, chatId, from }) => {
+			// Track the latest chat ID for research delivery
+			if (chatId) lastTelegramChatId = chatId;
 			pushLog("telegram", `↙ ${from}: ${text.slice(0, 60)}`);
 			const r = await handleInbound(text, {
 				customer: String(chatId),
