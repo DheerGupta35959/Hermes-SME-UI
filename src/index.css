@@ -1603,6 +1603,9 @@ button {
 .side-panel.obs-wide {
   width: min(80vw, 100vw);
 }
+.side-panel.admin-wide {
+  width: min(520px, 100vw);
+}
 .side-panel-head.doc-side-head {
   align-items: flex-start;
   gap: 12px;
@@ -2238,3 +2241,167 @@ button {
 .bubble-actions { display: flex; gap: 6px; margin-top: 6px; }
 .msg-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); cursor: pointer; transition: color .12s, border-color .12s; }
 .msg-btn:hover { color: var(--ink); border-color: var(--accent); }
+
+/* ── Login page ── */
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: var(--bg);
+}
+.login-form {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px;
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+}
+.login-brand {
+  text-align: center;
+  margin-bottom: 8px;
+}
+.login-skull {
+  font-size: 24px;
+  color: var(--ink);
+}
+.login-brand h1 {
+  margin: 8px 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.login-sub {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+.login-error {
+  padding: 10px 12px;
+  background: #2a1010;
+  border: 1px solid #5c2020;
+  border-radius: 6px;
+  color: #f87171;
+  font-size: 12px;
+}
+.login-btn {
+  width: 100%;
+  padding: 10px;
+  background: var(--white);
+  color: var(--black);
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.login-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.login-btn:not(:disabled):hover {
+  background: #e5e5e5;
+}
+.loading-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--dim);
+  font-size: 14px;
+}
+
+/* ── User management (side panel) ── */
+.user-table-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 400px;
+}
+.user-table th {
+  text-align: left;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.user-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.user-table tr:hover td {
+  background: var(--panel2);
+}
+.user-form-card {
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.user-form-card h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.user-form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.user-form-row {
+  display: flex;
+  gap: 10px;
+}
+.user-form-row .field {
+  flex: 1;
+  min-width: 0;
+}
+.user-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.user-role-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.user-role-tag.on {
+  background: var(--ok-bg);
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.user-role-tag.on::before {
+  content: "✓ ";
+}
+.confirm-dialog {
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+}

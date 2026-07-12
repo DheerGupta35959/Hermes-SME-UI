@@ -43,11 +43,14 @@ export interface AleraState {
 }
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  // JWT token from login (localStorage) takes priority over VITE_HERMES_TOKEN
+  const jwt = (() => { try { return localStorage.getItem("hermes_token"); } catch { return null; } })();
+  const bearer = jwt || TOKEN;
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
       ...(init?.headers ?? {}),
     },
   });

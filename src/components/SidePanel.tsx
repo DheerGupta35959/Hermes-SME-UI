@@ -6,11 +6,12 @@ import { Settings } from "../pages/Settings";
 import { Brain } from "../pages/Brain";
 import { Observability } from "../pages/Observability";
 import { AddWorker } from "../pages/AddWorker";
+import { AdminUsers } from "./AdminUsers";
 import type { BrainDoc } from "../lib/brainDocs";
 import * as Hermes from "../lib/hermesClient";
 import { skills, connectors, workerColor } from "../brain";
 
-export type PanelId = "settings" | "connections" | "workers" | "activity" | "brain" | "traces" | "addworker";
+export type PanelId = "settings" | "connections" | "workers" | "activity" | "brain" | "traces" | "addworker" | "adminusers";
 
 const TITLES: Record<PanelId, string> = {
   settings: "Settings",
@@ -20,6 +21,7 @@ const TITLES: Record<PanelId, string> = {
   brain: "Under the hood",
   traces: "Observability",
   addworker: "Add a worker",
+  adminusers: "User Management",
 };
 
 function DocumentPanel({
@@ -248,7 +250,7 @@ export function SidePanel({
   return (
     <div className="side-overlay" onClick={onClose}>
       <aside
-        className={`side-panel ${panel === "traces" ? "obs-wide" : isDoc ? "doc-wide" : ""}`}
+        className={`side-panel ${panel === "traces" ? "obs-wide" : isDoc ? "doc-wide" : panel === "adminusers" ? "admin-wide" : ""}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label={title}
@@ -273,6 +275,7 @@ export function SidePanel({
               {panel === "brain" && <Brain />}
               {panel === "traces" && <Observability />}
               {panel === "addworker" && <AddWorker onClose={onClose} />}
+              {panel === "adminusers" && <AdminUsers />}
             </div>
           </>
         )}

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Home } from "./pages/Home";
 import { SidePanel, type PanelId } from "./components/SidePanel";
+import { useAuth } from "./components/AuthContext";
 import * as Hermes from "./lib/hermesClient";
 import type { TerminalLine } from "./lib/hermesClient";
 
 export default function App() {
+  const { user, logout, hasRole } = useAuth();
   const [panel, setPanel] = useState<PanelId | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
   const [workerName, setWorkerName] = useState<string | null>(null);
@@ -166,9 +168,9 @@ export default function App() {
             aria-expanded={profileOpen}
             aria-haspopup="menu"
           >
-            <span className="avatar">M</span>
+            <span className="avatar">{user?.displayName?.charAt(0) || "M"}</span>
             <span className="user-meta">
-              <b>Maya</b>
+              <b>{user?.displayName || "User"}</b>
               <em>
                 {done} done · {needsYou} need you
               </em>
@@ -179,10 +181,10 @@ export default function App() {
           {profileOpen && (
             <div className="profile-menu" role="menu">
               <div className="profile-menu-head">
-                <span className="avatar lg">M</span>
+                <span className="avatar lg">{user?.displayName?.charAt(0) || "M"}</span>
                 <div>
-                  <b>Maya</b>
-                  <em>maya@northline.co</em>
+                  <b>{user?.displayName || "User"}</b>
+                  <em>{user?.email || ""}</em>
                 </div>
                 <button className="btn-upgrade" type="button">
                   Upgrade
@@ -203,6 +205,14 @@ export default function App() {
               <button role="menuitem" type="button">
                 Language
               </button>
+              {hasRole("Admin") && (
+                <>
+                  <div className="profile-sep" />
+                  <button role="menuitem" onClick={() => openFromProfile("adminusers")}>
+                    User Management
+                  </button>
+                </>
+              )}
               <div className="profile-sep" />
               <button role="menuitem" onClick={() => openFromProfile("addworker")}>
                 + Add worker
@@ -214,7 +224,7 @@ export default function App() {
                 Observability
               </button>
               <div className="profile-sep" />
-              <button role="menuitem" className="danger" type="button">
+              <button role="menuitem" className="danger" type="button" onClick={logout}>
                 Log out
               </button>
             </div>

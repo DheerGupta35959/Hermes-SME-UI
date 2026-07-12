@@ -32,7 +32,8 @@ import { linkupEnabled } from "./linkup.mjs";
 import { shopifyEnabled } from "./shopify.mjs";
 import { catalogEnabled, catalogSize, catalogStats } from "./catalog.mjs";
 import { chat } from "./lib/agent.mjs";
-import { initDb, saveItem, loadItems } from "./lib/db.mjs";
+import { initDb, saveItem, loadItems, findUserByUsername, findUserById, listAllUsers, createUser, updateUser, deleteUser, getUserRoles } from "./lib/db.mjs";
+import { verifyToken, isPublicPath, verifyPassword, signToken } from "./lib/auth.mjs";
 import { convexEnabled, cxUpsert, cxList } from "./lib/convexStore.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -333,8 +334,24 @@ const server = createServer(async (req, res) => {
 	const url = new URL(req.url, `http://localhost:${PORT}`);
 	const { pathname } = url;
 	if (req.method === "OPTIONS") return send(res, 204);
-	if (TOKEN && req.headers.authorization !== `Bearer ${TOKEN}`)
-		return send(res, 401, { error: "unauthorized" });
+
+	if (!isPublicPath(pathname)) {
+		const header = req.headers.authorization;
+		if (!header) return send(res, 401, { error: "unauthorized" });
+
+		const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+		const payload = verifyToken(token);
+
+		if (payload) {
+			req.user = payload;
+		} else {
+			// Fallback: ALERA_TOKEN shared-secret (machine-to-machine)
+			if (!TOKEN || token !== TOKEN) {
+				return send(res, 401, { error: "unauthorized" });
+			}
+			req.user = { sub: "machine", username: "machine", email: "", roles: ["Admin"] };
+		}
+	}
 
 	try {
 		// READ
@@ -557,6 +574,105 @@ const server = createServer(async (req, res) => {
 				docs,
 				text: r.text,
 			});
+		}
+
+		// ── Account / Auth ────────────────────────────────────────────────────────
+		if (req.method === "POST" && pathname === "/api/account/login") {
+			const { username, password } = await readBody(req);
+			if (!username || !password) return send(res, 400, { error: "username and password required" });
+			const user = findUserByUsername(username);
+			if (!user || !verifyPassword(password, user.password_hash))
+				return send(res, 401, { error: "Invalid username or password" });
+			const roles = getUserRoles(user.id);
+			const payload = {
+				id: user.id,
+				username: user.username,
+				email: user.email,
+				displayName: user.display_name,
+				roles,
+			};
+			const token = signToken(payload);
+			return send(res, 200, { token, user: payload });
+		}
+
+		if (req.method === "GET" && pathname === "/api/account/me") {
+			const uid = req.user?.sub;
+			if (!uid) return send(res, 401, { error: "unauthorized" });
+			if (uid === "machine") {
+				return send(res, 200, {
+					user: { id: "machine", username: "machine", email: "", displayName: "Machine", roles: ["Admin"] },
+				});
+			}
+			const user = findUserById(uid);
+			if (!user) return send(res, 401, { error: "user not found" });
+			return send(res, 200, {
+				user: {
+					id: user.id,
+					username: user.username,
+					email: user.email,
+					displayName: user.display_name,
+					roles: user.roles,
+				},
+			});
+		}
+
+		// Admin-only user management
+		if (pathname.startsWith("/api/account/users")) {
+			if (!req.user?.roles?.includes("Admin")) return send(res, 403, { error: "forbidden" });
+		}
+
+		if (req.method === "GET" && pathname === "/api/account/users") {
+			const users = listAllUsers().map((u) => ({
+				id: u.id,
+				username: u.username,
+				email: u.email,
+				displayName: u.display_name,
+				roles: u.roles,
+				createdAt: u.created_at,
+			}));
+			return send(res, 200, users);
+		}
+
+		if (req.method === "POST" && pathname === "/api/account/users") {
+			const body = await readBody(req);
+			if (!body.username || !body.password || !body.email)
+				return send(res, 400, { error: "username, email, and password required" });
+			try {
+				const user = createUser(body);
+				if (!user) return send(res, 500, { error: "failed to create user" });
+				return send(res, 201, {
+					id: user.id,
+					username: user.username,
+					email: user.email,
+					displayName: user.display_name,
+					roles: user.roles,
+				});
+			} catch (e) {
+				return send(res, 409, { error: String(e.message || e) });
+			}
+		}
+
+		if (req.method === "PUT" && pathname.startsWith("/api/account/users/")) {
+			const id = pathname.slice("/api/account/users/".length);
+			if (!id) return send(res, 400, { error: "missing user id" });
+			const body = await readBody(req);
+			const user = updateUser(id, body);
+			if (!user) return send(res, 404, { error: "user not found" });
+			return send(res, 200, {
+				id: user.id,
+				username: user.username,
+				email: user.email,
+				displayName: user.display_name,
+				roles: user.roles,
+			});
+		}
+
+		if (req.method === "DELETE" && pathname.startsWith("/api/account/users/")) {
+			const id = pathname.slice("/api/account/users/".length);
+			if (!id) return send(res, 400, { error: "missing user id" });
+			if (id === "admin") return send(res, 403, { error: "cannot delete default admin" });
+			deleteUser(id);
+			return send(res, 204);
 		}
 
 		return send(res, 404, { error: "not found" });
