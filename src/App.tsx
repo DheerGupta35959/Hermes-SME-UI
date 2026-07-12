@@ -4,6 +4,7 @@ import { SidePanel, type PanelId } from "./components/SidePanel";
 import { useAuth } from "./components/AuthContext";
 import * as Hermes from "./lib/hermesClient";
 import type { TerminalLine } from "./lib/hermesClient";
+import { useNotifications } from "./lib/useNotifications";
 
 export default function App() {
   const { user, logout, hasRole } = useAuth();
@@ -31,6 +32,7 @@ export default function App() {
     };
   }, []);
   const workspaceName = bizName || "Hermes SME";
+  const notif = useNotifications(stream, bizName);
 
   const needsYou = stream.filter((s) => s.stage === "awaiting").length;
   const done = stream.filter((s) => s.stage === "done").length;
@@ -158,7 +160,32 @@ export default function App() {
             </span>
           )}
         </div>
-        <div className="topbar-right" ref={profileRef}>
+        <div className="topbar-right">
+          <button
+            className={`notif-btn ${notif.state === "granted" ? "on" : ""} ${notif.state === "unrequested" ? "idle" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (notif.state === "unrequested") notif.requestPermission();
+            }}
+            title={
+              notif.state === "granted"
+                ? "Notifications enabled"
+                : notif.state === "denied"
+                  ? "Notifications blocked (update browser settings)"
+                  : notif.state === "unsupported"
+                    ? "Notifications not supported"
+                    : "Enable desktop notifications"
+            }
+            aria-label={
+              notif.state === "granted" ? "Notifications enabled" : "Enable notifications"
+            }
+          >
+            {notif.state === "granted" ? "🔔" : "🔕"}
+            {needsYou > 0 && notif.state === "granted" && (
+              <span className="notif-badge">{needsYou}</span>
+            )}
+          </button>
+          <div ref={profileRef}>
           <button
             className={`userpill ${profileOpen ? "open" : ""}`}
             onClick={(e) => {
@@ -229,6 +256,7 @@ export default function App() {
               </button>
             </div>
           )}
+          </div>
         </div>
       </header>
 

@@ -269,6 +269,64 @@ button {
   margin: 6px 4px;
 }
 
+.notif-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+  transition: border-color 0.12s, background 0.12s;
+}
+.notif-btn:hover {
+  border-color: var(--line2);
+  background: var(--panel);
+}
+.notif-btn.on {
+  color: var(--ink);
+}
+.notif-btn.idle {
+  opacity: 0.55;
+}
+.notif-btn.idle:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+.notif-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--amber);
+  color: #201400;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+  animation: notif-in 0.3s ease-out;
+}
+@keyframes notif-in {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
 .term-toggle {
   display: inline-flex;
   align-items: center;
