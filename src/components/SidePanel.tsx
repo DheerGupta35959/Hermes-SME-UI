@@ -9,7 +9,15 @@ import { AddWorker } from "../pages/AddWorker";
 import { AdminUsers } from "./AdminUsers";
 import type { BrainDoc } from "../lib/brainDocs";
 import * as Hermes from "../lib/hermesClient";
-import { skills, connectors, workerColor } from "../brain";
+import {
+  skills,
+  connectors,
+  workerColor,
+  type Skill,
+  type CronSchedule,
+  type WorkerChain,
+  type ABTestConfig,
+} from "../brain";
 
 export type PanelId = "settings" | "connections" | "workers" | "activity" | "brain" | "traces" | "addworker" | "adminusers";
 
@@ -122,6 +130,256 @@ function DocumentPanel({
   );
 }
 
+function ScheduleSection({ schedule, workerName }: { schedule: CronSchedule; workerName: string }) {
+  const [sched, setSched] = useState(schedule);
+  const [editing, setEditing] = useState(false);
+  const [draftExpr, setDraftExpr] = useState(schedule.expression);
+
+  function toggleSchedule() {
+    const next = { ...sched, enabled: !sched.enabled };
+    setSched(next);
+    void Hermes.setWorkerEnabled(workerName, next.enabled);
+  }
+
+  function saveSchedule() {
+    if (!draftExpr.trim()) return;
+    const label =
+      draftExpr === "0 7 * * 1-5"
+        ? "Weekdays at 7:00 AM"
+        : draftExpr === "0 9 * * 1-5"
+          ? "Weekdays at 9:00 AM"
+          : draftExpr === "0 8 * * *"
+            ? "Daily at 8:00 AM"
+            : `Cron: ${draftExpr}`;
+    setSched({ ...sched, expression: draftExpr.trim(), label, enabled: true });
+    setEditing(false);
+  }
+
+  return (
+    <div className="setting">
+      <div className="setting-k">
+        Schedule
+        <button
+          className="text-mini"
+          style={{ marginLeft: 8 }}
+          onClick={() => setEditing((v) => !v)}
+        >
+          {editing ? "Cancel" : "Edit"}
+        </button>
+      </div>
+      <div className="setting-v">
+        {editing ? (
+          <div className="schedule-edit">
+            <input
+              className="schedule-input"
+              value={draftExpr}
+              onChange={(e) => setDraftExpr(e.target.value)}
+              placeholder="0 7 * * 1-5"
+            />
+            <span className="muted" style={{ fontSize: 11 }}>
+              Standard cron syntax: minute hour day month weekday
+            </span>
+            <button className="btn-primary" style={{ marginTop: 6 }} onClick={saveSchedule}>
+              Set schedule
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="schedule-display">
+              <button
+                className={`toggle ${sched.enabled ? "on" : ""}`}
+                onClick={toggleSchedule}
+              >
+                <span className="knob" />
+              </button>
+              <span className="toggle-label">{sched.enabled ? "On" : "Paused"}</span>
+            </div>
+            <code className="spec" style={{ marginTop: 8 }}>
+              {sched.expression} — {sched.label}
+            </code>
+            {sched.nextRun && (
+              <div className="skill-meta" style={{ marginTop: 6 }}>
+                Next run: {sched.nextRun}
+                {sched.lastRun && ` · Last: ${sched.lastRun}`}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChainSection({ chain, workerName }: { chain: WorkerChain; workerName: string }) {
+  const [display, setDisplay] = useState(chain);
+  const [draftNext, setDraftNext] = useState(display.nextWorker);
+  const [draftCond, setDraftCond] = useState(display.condition);
+  const [draftDelay, setDraftDelay] = useState(display.delayMinutes ?? 0);
+  const [editing, setEditing] = useState(false);
+
+  const otherWorkers = skills.filter((s) => s.name !== workerName);
+
+  function saveChain() {
+    if (!draftNext.trim() || !otherWorkers.find((w) => w.name === draftNext.trim())) return;
+    setDisplay({ nextWorker: draftNext.trim(), condition: draftCond, delayMinutes: draftDelay });
+    setEditing(false);
+  }
+
+  return (
+    <div className="setting">
+      <div className="setting-k">
+        Chain
+        <button
+          className="text-mini"
+          style={{ marginLeft: 8 }}
+          onClick={() => setEditing((v) => !v)}
+        >
+          {editing ? "Cancel" : "Edit"}
+        </button>
+      </div>
+      <div className="setting-v">
+        {editing ? (
+          <div className="chain-edit">
+            <div className="field">
+              <span>Next worker</span>
+              <select
+                className="schedule-input"
+                value={draftNext}
+                onChange={(e) => setDraftNext(e.target.value)}
+              >
+                {otherWorkers.map((w) => (
+                  <option key={w.name} value={w.name}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ marginTop: 8 }}>
+              <span>Trigger condition</span>
+              <div className="addw-auto">
+                <button
+                  type="button"
+                  className={draftCond === "always" ? "on" : ""}
+                  onClick={() => setDraftCond("always")}
+                >
+                  Always
+                </button>
+                <button
+                  type="button"
+                  className={draftCond === "on_success" ? "on" : ""}
+                  onClick={() => setDraftCond("on_success")}
+                >
+                  On success
+                </button>
+                <button
+                  type="button"
+                  className={draftCond === "on_failure" ? "on" : ""}
+                  onClick={() => setDraftCond("on_failure")}
+                >
+                  On failure
+                </button>
+              </div>
+            </div>
+            <div className="field" style={{ marginTop: 8 }}>
+              <span>Delay (minutes)</span>
+              <input
+                className="schedule-input"
+                type="number"
+                min={0}
+                max={1440}
+                value={draftDelay}
+                onChange={(e) => setDraftDelay(Number(e.target.value))}
+              />
+            </div>
+            <button className="btn-primary" style={{ marginTop: 8 }} onClick={saveChain}>
+              Save chain
+            </button>
+          </div>
+        ) : (
+          <div className="chain-display">
+            <div className="chain-flow">
+              <span className="chain-worker">{workerName}</span>
+              <span className="chain-arrow">→</span>
+              <span
+                className="chain-worker"
+                style={{ background: workerColor[display.nextWorker] ?? "#555" }}
+              >
+                {display.nextWorker}
+              </span>
+            </div>
+            <div className="chain-meta">
+              On {display.condition === "always" ? "completion" : display.condition === "on_success" ? "success" : "failure"}
+              {display.delayMinutes ? ` · ${display.delayMinutes} min delay` : ""}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ABTestSection({ abTest }: { abTest: ABTestConfig }) {
+  const [showAll, setShowAll] = useState(false);
+
+  const a = abTest.variants[0];
+  const b = abTest.variants[1];
+  const totalRuns = a.runs + b.runs;
+
+  return (
+    <div className="setting">
+      <div className="setting-k">
+        A/B Test
+        <button
+          className="text-mini"
+          style={{ marginLeft: 8 }}
+          onClick={() => setShowAll((v) => !v)}
+        >
+          {showAll ? "Less" : "Details"}
+        </button>
+      </div>
+      <div className="setting-v">
+        <div className="ab-summary">
+          <div className="ab-bar">
+            <div className="ab-bar-track">
+              <div
+                className="ab-bar-fill"
+                style={{ width: `${abTest.splitB}%`, background: workerColor[b.name] ?? "#a855f7" }}
+              />
+            </div>
+            <div className="ab-split-labels">
+              <span>{100 - abTest.splitB}% {a.name}</span>
+              <span>{abTest.splitB}% {b.name}</span>
+            </div>
+          </div>
+          <div className="ab-variants">
+            <div className="ab-variant">
+              <span className="ab-vname">A: {a.name}</span>
+              <span className="ab-vstat">{a.runs} runs · {a.successRate}% success</span>
+            </div>
+            <div className="ab-variant">
+              <span className="ab-vname">B: {b.name}</span>
+              <span className="ab-vstat">{b.runs} runs · {b.successRate}% success</span>
+            </div>
+          </div>
+          {totalRuns > 0 && (
+            <div className="ab-overall">
+              {totalRuns} total runs{abTest.startedAt ? ` · started ${abTest.startedAt}` : ""}
+            </div>
+          )}
+          {showAll && (
+            <div className="ab-detail">
+              <div className="step-label">Variant A</div>
+              <div className="clause">{a.purpose}</div>
+              <div className="step-label" style={{ marginTop: 8 }}>Variant B</div>
+              <div className="clause">{b.purpose}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WorkerPanel({ name, onClose }: { name: string; onClose: () => void }) {
   const worker = skills.find((s) => s.name === name);
   const connectedIds = useMemo(
@@ -130,6 +388,11 @@ function WorkerPanel({ name, onClose }: { name: string; onClose: () => void }) {
   );
   const [enabled, setEnabled] = useState(true);
   const [ran, setRan] = useState(false);
+
+  // Find which workers chain to this one (incoming chains)
+  const chainedFrom = skills.filter(
+    (s) => s.chain?.nextWorker === name && s.name !== name
+  );
 
   if (!worker) return null;
 
@@ -208,6 +471,38 @@ function WorkerPanel({ name, onClose }: { name: string; onClose: () => void }) {
             )}
           </div>
         </div>
+
+        {/* Schedule section */}
+        {worker.schedule && <ScheduleSection schedule={worker.schedule} workerName={name} />}
+
+        {/* Chain section — outgoing */}
+        {worker.chain && <ChainSection chain={worker.chain} workerName={name} />}
+
+        {/* Chain section — incoming */}
+        {chainedFrom.length > 0 && (
+          <div className="setting">
+            <div className="setting-k">Triggered by</div>
+            <div className="setting-v">
+              <div className="chain-display">
+                {chainedFrom.map((cf) => (
+                  <div key={cf.name} className="chain-flow" style={{ marginBottom: 4 }}>
+                    <span
+                      className="chain-worker"
+                      style={{ background: workerColor[cf.name] ?? "#555" }}
+                    >
+                      {cf.name}
+                    </span>
+                    <span className="chain-arrow">→</span>
+                    <span className="chain-worker">{name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* A/B Test section */}
+        {worker.abTest && <ABTestSection abTest={worker.abTest} />}
 
         <div className="setting">
           <div className="setting-k">Activity</div>

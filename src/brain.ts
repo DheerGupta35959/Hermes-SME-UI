@@ -279,6 +279,39 @@ export const drilldownNav = ["Activity", "Workers", "Connections", "Under the ho
 
 // --- Workers (the universal jobs every business has; Hermes skills underneath) ---
 export type Arm = "reactive" | "proactive" | "shared";
+
+/** Cron expression + human label for scheduling a worker run. */
+export interface CronSchedule {
+  expression: string; // standard cron, e.g. "0 7 * * 1-5"
+  label: string; // human-readable, e.g. "Weekdays at 7:00 AM"
+  enabled: boolean;
+  nextRun?: string; // ISO timestamp or plain text like "Tomorrow 7:00 AM"
+  lastRun?: string;
+}
+
+/** Chain: after this worker finishes, trigger another worker. */
+export interface WorkerChain {
+  nextWorker: string; // name of the worker to trigger
+  condition: "always" | "on_success" | "on_failure";
+  delayMinutes?: number; // delay before triggering next, default 0
+}
+
+/** A/B test variant definition. */
+export interface ABTestVariant {
+  name: string;
+  purpose: string;
+  autonomy: "auto" | "careful";
+  runs: number;
+  successRate?: number; // percentage of runs that succeeded
+}
+
+/** A/B test config for a worker — splits incoming work across variants. */
+export interface ABTestConfig {
+  variants: [ABTestVariant, ABTestVariant]; // exactly two variants
+  splitB: number; // 0–100, percentage of traffic routed to variant B
+  startedAt?: string;
+}
+
 export interface Skill {
   name: string;
   purpose: string;
@@ -287,10 +320,13 @@ export interface Skill {
   arm: Arm;
   requires: string[]; // connector ids this worker needs to run
   autonomy: "auto" | "careful"; // careful = drafts, waits for your OK
+  schedule?: CronSchedule;
+  chain?: WorkerChain;
+  abTest?: ABTestConfig;
 }
 
 export const skills: Skill[] = [
-  { name: "inbox responder", purpose: "Reads Telegram, email, and DMs; drafts replies in your tone; sends the routine ones you've approved", runs: 214, lastRun: "2m ago", arm: "reactive", requires: ["telegram", "email"], autonomy: "auto" },
+  { name: "inbox responder", purpose: "Reads Telegram, email, and DMs; drafts replies in your tone; sends the routine ones you've approved", runs: 214, lastRun: "2m ago", arm: "reactive", requires: ["telegram", "email"], autonomy: "auto", abTest: { variants: [{ name: "concise", purpose: "Short, direct replies under 2 sentences", autonomy: "auto", runs: 112, successRate: 94 }, { name: "warm", purpose: "Friendly, detailed replies with personal touch", autonomy: "auto", runs: 102, successRate: 91 }], splitB: 50, startedAt: "2026-06-01" } },
   { name: "orders & fulfillment", purpose: "Answers 'where's my order?', shares tracking, checks stock and delivery windows before promising a date", runs: 96, lastRun: "6m ago", arm: "reactive", requires: ["shopify"], autonomy: "auto" },
   { name: "bookings", purpose: "Books and confirms appointments, pickups, and calls; reschedules on request and blocks conflicts", runs: 58, lastRun: "18m ago", arm: "reactive", requires: ["calendar"], autonomy: "careful" },
   { name: "quotes & estimates", purpose: "Turns an enquiry into a priced quote using your catalog and rules; sends after you approve the number", runs: 44, lastRun: "22m ago", arm: "proactive", requires: ["shopify", "email"], autonomy: "careful" },
@@ -299,10 +335,10 @@ export const skills: Skill[] = [
   { name: "follow-ups", purpose: "Nudges unanswered quotes and conversations that went quiet after a few days, once, politely", runs: 22, lastRun: "3h ago", arm: "proactive", requires: ["email"], autonomy: "auto" },
   { name: "returns & refunds", purpose: "Handles size swaps, returns, and refund requests within your policy; escalates the exceptions", runs: 19, lastRun: "52m ago", arm: "reactive", requires: ["shopify"], autonomy: "careful" },
   { name: "reviews & reputation", purpose: "Watches reviews and social mentions, drafts personal responses, flags the ones that need you", runs: 27, lastRun: "41m ago", arm: "reactive", requires: ["review"], autonomy: "auto" },
-  { name: "lead capture", purpose: "Catches new enquiries from Telegram, forms, and DMs; qualifies them and routes the hot ones to you", runs: 38, lastRun: "12m ago", arm: "proactive", requires: ["telegram"], autonomy: "auto" },
+  { name: "lead capture", purpose: "Catches new enquiries from Telegram, forms, and DMs; qualifies them and routes the hot ones to you", runs: 38, lastRun: "12m ago", arm: "proactive", requires: ["telegram"], autonomy: "auto", chain: { nextWorker: "follow-ups", condition: "on_success", delayMinutes: 15 } },
   { name: "promotions", purpose: "Drafts offers, newsletters, and restock announcements — always inside your discount limit", runs: 14, lastRun: "2h ago", arm: "proactive", requires: ["email", "instagram"], autonomy: "careful" },
   { name: "restock & inventory", purpose: "Watches stock levels, flags what's running low, and drafts reorders before you sell out", runs: 41, lastRun: "1h ago", arm: "proactive", requires: ["shopify"], autonomy: "auto" },
-  { name: "daily brief", purpose: "Every morning, sums up what happened, what it handled, and what's waiting for your approval", runs: 30, lastRun: "today 7:00", arm: "proactive", requires: [], autonomy: "auto" },
+  { name: "daily brief", purpose: "Every morning, sums up what happened, what it handled, and what's waiting for your approval", runs: 30, lastRun: "today 7:00", arm: "proactive", requires: [], autonomy: "auto", schedule: { expression: "0 7 * * 1-5", label: "Weekdays at 7:00 AM", enabled: true, nextRun: "Tomorrow 7:00 AM", lastRun: "Today 7:00 AM" } },
   { name: "product insights", purpose: "Reads reviews, feedback forms, and suggestions. When several people flag the same problem it opens a human task to fix it; when several ask for the same thing it plans it next; and it turns survey answers into a ranked to-do list.", runs: 47, lastRun: "24m ago", arm: "proactive", requires: ["review", "feedback"], autonomy: "careful" },
   { name: "rule keeper", purpose: "Checks every action against your rules before it happens; declines what breaks them and tells you why", runs: 337, lastRun: "2m ago", arm: "shared", requires: [], autonomy: "auto" },
 ];
