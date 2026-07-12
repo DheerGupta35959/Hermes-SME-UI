@@ -16,12 +16,25 @@ The guardrail that makes it trustworthy: **it always asks before anything money-
 
 ## How it works
 
-```
-  Browser (5173)             Hermes SME UI             Hermes agent (CLI)
-  ┌───────────┐   http/poll   ┌──────────┐   exec/files  ┌────────────────┐
-  │  cockpit  │ ◀───────────▶ │  adapter │ ◀───────────▶ │ brain/ · memory │
-  └───────────┘   :5173       │  :8787   │               └────────────────┘
-                              └──────────┘
+```mermaid
+flowchart LR
+    subgraph owner ["Owner · Browser"]
+        UI["Cockpit UI<br/><code>localhost:5173</code>"]
+    end
+    subgraph sme ["Hermes SME"]
+        AD["Adapter<br/><code>localhost:8787</code>"]
+    end
+    subgraph agent ["Hermes Agent · local CLI"]
+        BR["brain/ &middot; memory<br/>rules &middot; docs &middot; workers"]
+    end
+
+    UI <-->|"HTTP · live poll"| AD
+    AD <-->|"exec · files"| BR
+
+    classDef box fill:#161616,stroke:#3a3a3a,color:#f0f0f0,rx:8,ry:8;
+    classDef group fill:#0e0e0e,stroke:#2a2a2a,color:#9a9a9a;
+    class UI,AD,BR box;
+    class owner,sme,agent group;
 ```
 
 - **UI** — a single-page cockpit (React + TypeScript + Vite).
